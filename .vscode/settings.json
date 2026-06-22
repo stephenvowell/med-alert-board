@@ -1,0 +1,6 @@
+{
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/esp32-neopixel/compile_commands.json",
+  "clangd.arguments": [
+    "--compile-commands-dir=${workspaceFolder}/esp32-neopixel"
+  ]
+}

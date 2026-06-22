@@ -1,0 +1,13 @@
+{
+  "configurations": [
+    {
+      "name": "PlatformIO",
+      "compileCommands": "${workspaceFolder}/compile_commands.json",
+      "compilerPath": "C:/Users/Steph/.platformio/packages/toolchain-riscv32-esp/bin/riscv32-esp-elf-g++.exe",
+      "cStandard": "c17",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "gcc-riscv"
+    }
+  ],
+  "version": 4
+}

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Med-Alert Board</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  </head>
+  <body>
+    <div class="page">
+      <header class="header">
+        <div>
+          <p class="eyebrow">Personal wellness view, I Aint Dead Yet!</p>
+          <h1>Med-Alert Board</h1>
+          <p class="subtitle">
+            All available Oura API metrics in one place. Not a medical device — for personal insight only.
+          </p>
+        </div>
+        <div class="header-actions">
+          <label class="range-picker">
+            Range
+            <select id="range-days">
+              <option value="1">Today</option>
+              <option value="7" selected>Last 7 days</option>
+              <option value="14">Last 14 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="60">Last 60 days</option>
+              <option value="90">Last 90 days</option>
+              <option value="180">Last 6 months</option>
+              <option value="365">Last 1 year</option>
+              <option value="730">Last 2 years</option>
+            </select>
+          </label>
+          <button id="refresh-btn" class="button secondary" hidden>Refresh</button>
+          <a id="connect-btn" class="button primary" href="/auth/login">Connect Oura</a>
+          <button id="logout-btn" class="button secondary" hidden>Disconnect</button>
+        </div>
+      </header>
+
+      <div id="banner" class="banner" hidden></div>
+
+      <section id="connect-panel" class="panel connect-panel">
+        <h2>Connect your ring</h2>
+        <p>
+          Your Oura app credentials are configured locally in <code>.env</code>.
+          Make sure your Oura developer app uses this redirect URI:
+        </p>
+        <p class="redirect-uri"><code>http://localhost:3000/auth/callback</code></p>
+        <ol>
+          <li>In <a href="https://cloud.ouraring.com" target="_blank" rel="noreferrer">cloud.ouraring.com</a>, confirm the redirect URI above matches exactly</li>
+          <li>Run <code>npm install</code> and <code>npm start</code></li>
+          <li>Click <strong>Connect Oura</strong> below and approve access</li>
+          <li>If some metrics are missing, click <strong>Disconnect</strong> then connect again to grant all permissions</li>
+        </ol>
+      </section>
+
+      <main id="dashboard" hidden>
+        <nav id="section-nav" class="section-nav"></nav>
+        <section class="stats-grid" id="stats-grid"></section>
+        <section id="recovery-section" class="recovery-section"></section>
+        <div id="charts-section" class="charts-grid"></div>
+        <div id="tables-section"></div>
+      </main>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
