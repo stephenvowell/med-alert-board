@@ -270,8 +270,8 @@ function datetimeRange(days = 7) {
   };
 }
 
-const ALERT_DROP_POINTS = 10;
-const ALERT_WINDOW_DAYS = 7;
+const ALERT_DROP_POINTS = Number(process.env.ALERT_DROP_POINTS ?? 10);
+const ALERT_WINDOW_DAYS = Number(process.env.ALERT_WINDOW_DAYS ?? 7);
 
 function averageNumbers(values) {
   const nums = values.filter((value) => typeof value === "number" && Number.isFinite(value));
