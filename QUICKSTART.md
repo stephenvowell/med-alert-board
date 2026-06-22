@@ -47,7 +47,7 @@ One-page reference for **Med-Alert Board**. Full details: [README.md](README.md)
 4. pio run -t upload --upload-port COM15
 ```
 
-**PC IP example:** `192.168.12.210` — use yours, not `localhost`.
+**PC IP example:** `192.168.1.100` — use yours, not `localhost`.
 
 **Serial monitor:** `pio device monitor --port COM15 --baud 115200`
 
