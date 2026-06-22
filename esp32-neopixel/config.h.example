@@ -1,7 +1,17 @@
 #pragma once
 
-// Copy to config.h and fill in your home Wi-Fi and PC IP running Med-Alert Board.
+// Copy to config.h and fill in your home Wi-Fi and Med-Alert Board server address.
+//
+// Local PC server: use your PC's LAN IPv4 (ipconfig), not localhost.
+// GoDaddy hosted: hostname only (HTTPS not yet supported in firmware — use PC for ESP32).
+
 #define WIFI_SSID "your-wifi-name"
 #define WIFI_PASSWORD "your-wifi-password"
 #define HEALTH_BOARD_HOST "192.168.1.100"
 #define HEALTH_BOARD_PORT 3000
+
+// Polls GET /api/ring-status every 60s. Ring colors:
+//   green  = OK
+//   yellow = HR or SpO2 below 7-day average
+//   blue   = Oura ring battery <= 25%
+//   red    = flashing (HR below 40 bpm)

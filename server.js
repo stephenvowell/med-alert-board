@@ -5,9 +5,9 @@ import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import express from "express";
 
-dotenv.config();
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, ".env"), override: false });
+
 const TOKEN_FILE = path.join(__dirname, ".tokens.json");
 const OURA_AUTH_URL = "https://cloud.ouraring.com/oauth/authorize";
 const OURA_TOKEN_URL = "https://api.ouraring.com/oauth/token";
@@ -55,21 +55,44 @@ const DATE_RANGE_ENDPOINTS = [
 ];
 
 const {
-  OURA_CLIENT_ID,
-  OURA_CLIENT_SECRET,
-  OURA_REDIRECT_URI = "http://localhost:3000/auth/callback",
-  PORT = "3000",
+  OURA_CLIENT_ID: OURA_CLIENT_ID_RAW,
+  OURA_CLIENT_SECRET: OURA_CLIENT_SECRET_RAW,
+  OURA_REDIRECT_URI: OURA_REDIRECT_URI_ENV,
+  PUBLIC_URL,
 } = process.env;
+
+const OURA_CLIENT_ID = OURA_CLIENT_ID_RAW?.trim();
+const OURA_CLIENT_SECRET = OURA_CLIENT_SECRET_RAW?.trim();
 
 if (!OURA_CLIENT_ID || !OURA_CLIENT_SECRET) {
   console.error(
-    "Missing OURA_CLIENT_ID or OURA_CLIENT_SECRET. Copy .env.example to .env and fill in your Oura app credentials."
+    "Missing OURA_CLIENT_ID or OURA_CLIENT_SECRET. Set them in .env locally or in your host's environment variable UI."
   );
   process.exit(1);
 }
 
 const app = express();
+app.set("trust proxy", true);
 const oauthStates = new Map();
+
+function requestOrigin(req) {
+  const protocol = req.get("x-forwarded-proto")?.split(",")[0]?.trim() || req.protocol;
+  const host = req.get("x-forwarded-host")?.split(",")[0]?.trim() || req.get("host");
+  return `${protocol}://${host}`;
+}
+
+function resolveRedirectUri(req) {
+  if (OURA_REDIRECT_URI_ENV) {
+    return OURA_REDIRECT_URI_ENV;
+  }
+  if (PUBLIC_URL) {
+    return `${PUBLIC_URL.replace(/\/$/, "")}/auth/callback`;
+  }
+  if (req) {
+    return `${requestOrigin(req)}/auth/callback`;
+  }
+  return "http://localhost:3000/auth/callback";
+}
 
 async function readTokens() {
   try {
@@ -272,6 +295,15 @@ function datetimeRange(days = 7) {
 
 const ALERT_DROP_POINTS = Number(process.env.ALERT_DROP_POINTS ?? 10);
 const ALERT_WINDOW_DAYS = Number(process.env.ALERT_WINDOW_DAYS ?? 7);
+const BATTERY_LOW_PERCENT = Number(process.env.BATTERY_LOW_PERCENT ?? 25);
+const HR_CRITICAL_LOW_BPM = Number(process.env.HR_CRITICAL_LOW_BPM ?? 40);
+
+function resolveRingColor(heartrateCriticalLow, heartrateAlert, spo2Alert, batteryAlert) {
+  if (heartrateCriticalLow) return "red";
+  if (heartrateAlert || spo2Alert) return "yellow";
+  if (batteryAlert) return "blue";
+  return "green";
+}
 
 function averageNumbers(values) {
   const nums = values.filter((value) => typeof value === "number" && Number.isFinite(value));
@@ -283,7 +315,7 @@ function spo2Average(row) {
   return row?.spo2_percentage?.average ?? null;
 }
 
-function computeAlerts(metrics, heartrateSamples) {
+function computeAlerts(metrics, heartrateSamples, batterySamples) {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - ALERT_WINDOW_DAYS);
   cutoff.setHours(0, 0, 0, 0);
@@ -302,6 +334,8 @@ function computeAlerts(metrics, heartrateSamples) {
   const avgHr = averageNumbers(hrSamples.map((sample) => sample.bpm));
   const heartrateAlert =
     latestHr != null && avgHr != null && latestHr < avgHr - ALERT_DROP_POINTS;
+  const heartrateCriticalLow =
+    latestHr != null && latestHr < HR_CRITICAL_LOW_BPM;
 
   const spo2Rows = (metrics?.daily_spo2 ?? [])
     .filter((row) => row.day && typeof spo2Average(row) === "number")
@@ -313,11 +347,26 @@ function computeAlerts(metrics, heartrateSamples) {
   const spo2Alert =
     latestSpo2 != null && avgSpo2 != null && latestSpo2 < avgSpo2 - ALERT_DROP_POINTS;
 
+  const batteryRows = (batterySamples ?? [])
+    .filter(
+      (sample) =>
+        typeof sample.level === "number" &&
+        sample.timestamp &&
+        Number.isFinite(sample.level)
+    )
+    .sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
+
+  const latestBattery = batteryRows.length ? batteryRows[batteryRows.length - 1].level : null;
+  const batteryAlert =
+    latestBattery != null && latestBattery <= BATTERY_LOW_PERCENT;
+
   return {
     heartrate: {
       latest: latestHr,
       average_7d: avgHr,
       alert: heartrateAlert,
+      critical_low: heartrateCriticalLow,
+      critical_threshold: HR_CRITICAL_LOW_BPM,
       threshold: avgHr != null ? avgHr - ALERT_DROP_POINTS : null,
     },
     spo2: {
@@ -326,21 +375,66 @@ function computeAlerts(metrics, heartrateSamples) {
       alert: spo2Alert,
       threshold: avgSpo2 != null ? avgSpo2 - ALERT_DROP_POINTS : null,
     },
-    ring_color: heartrateAlert || spo2Alert ? "yellow" : "green",
+    battery: {
+      latest: latestBattery,
+      alert: batteryAlert,
+      threshold: BATTERY_LOW_PERCENT,
+    },
+    ring_color: resolveRingColor(
+      heartrateCriticalLow,
+      heartrateAlert,
+      spo2Alert,
+      batteryAlert
+    ),
   };
+}
+
+function applyAlertTestOverrides(alerts) {
+  const overridden = {
+    heartrate: { ...alerts.heartrate },
+    spo2: { ...alerts.spo2 },
+    battery: { ...alerts.battery },
+    ring_color: alerts.ring_color,
+  };
+
+  if (process.env.ALERT_TEST_SPO2 === "1") {
+    overridden.spo2.alert = true;
+  }
+  if (process.env.ALERT_TEST_HEARTRATE === "1") {
+    overridden.heartrate.alert = true;
+  }
+  if (process.env.ALERT_TEST_HR_CRITICAL === "1") {
+    overridden.heartrate.critical_low = true;
+  }
+  if (process.env.ALERT_TEST_BATTERY === "1") {
+    overridden.battery.alert = true;
+  }
+
+  overridden.ring_color = resolveRingColor(
+    overridden.heartrate.critical_low,
+    overridden.heartrate.alert,
+    overridden.spo2.alert,
+    overridden.battery.alert
+  );
+  return overridden;
 }
 
 async function fetchAlertInputs() {
   const fetchRange = dateRange(ALERT_WINDOW_DAYS);
   const alertTimes = datetimeRange(ALERT_WINDOW_DAYS);
-  const [dailySpo2, heartrate] = await Promise.all([
+  const batteryTimes = datetimeRange(2);
+  const [dailySpo2, heartrate, ringBattery] = await Promise.all([
     safeOuraFetchAll("daily_spo2", fetchRange),
     safeOuraFetchAll("heartrate", alertTimes),
+    safeOuraFetchAll("ring_battery_level", batteryTimes),
   ]);
 
-  return computeAlerts(
-    { daily_spo2: dailySpo2.ok ? dailySpo2.data : [] },
-    heartrate.ok ? heartrate.data : []
+  return applyAlertTestOverrides(
+    computeAlerts(
+      { daily_spo2: dailySpo2.ok ? dailySpo2.data : [] },
+      heartrate.ok ? heartrate.data : [],
+      ringBattery.ok ? ringBattery.data : []
+    )
   );
 }
 
@@ -367,13 +461,25 @@ app.get("/api/status", async (_req, res) => {
   }
 });
 
-app.get("/auth/login", (_req, res) => {
+app.get("/api/oauth-info", (req, res) => {
+  res.json({
+    redirect_uri: resolveRedirectUri(req),
+    source: OURA_REDIRECT_URI_ENV
+      ? "OURA_REDIRECT_URI"
+      : PUBLIC_URL
+        ? "PUBLIC_URL"
+        : "request-host",
+  });
+});
+
+app.get("/auth/login", (req, res) => {
   const state = crypto.randomBytes(16).toString("hex");
-  oauthStates.set(state, Date.now());
+  const redirectUri = resolveRedirectUri(req);
+  oauthStates.set(state, { createdAt: Date.now(), redirectUri });
 
   const params = new URLSearchParams({
     client_id: OURA_CLIENT_ID,
-    redirect_uri: OURA_REDIRECT_URI,
+    redirect_uri: redirectUri,
     response_type: "code",
     scope: SCOPES,
     state,
@@ -396,13 +502,15 @@ app.get("/auth/callback", async (req, res) => {
   if (!state || typeof state !== "string" || !oauthStates.has(state)) {
     return res.redirect("/?error=Invalid+OAuth+state");
   }
+  const oauthState = oauthStates.get(state);
   oauthStates.delete(state);
+  const redirectUri = oauthState.redirectUri;
 
   try {
     const body = new URLSearchParams({
       grant_type: "authorization_code",
       code,
-      redirect_uri: OURA_REDIRECT_URI,
+      redirect_uri: redirectUri,
       client_id: OURA_CLIENT_ID,
       client_secret: OURA_CLIENT_SECRET,
     });
@@ -514,7 +622,15 @@ app.get("/api/ring-status", async (_req, res) => {
   }
 });
 
-app.listen(Number(PORT), () => {
-  console.log(`Med-Alert Board running at http://localhost:${PORT}`);
-  console.log(`OAuth redirect URI: ${OURA_REDIRECT_URI}`);
+app.listen(process.env.PORT || 3000, "0.0.0.0", () => {
+  const port = process.env.PORT || 3000;
+  console.log(`Med-Alert Board running on 0.0.0.0:${port}`);
+  if (OURA_REDIRECT_URI_ENV) {
+    console.log(`OAuth redirect URI: ${OURA_REDIRECT_URI_ENV}`);
+  } else if (PUBLIC_URL) {
+    console.log(`OAuth redirect URI: ${resolveRedirectUri()} (from PUBLIC_URL)`);
+  } else {
+    console.log("OAuth redirect URI: auto-detected from request host (GoDaddy-friendly)");
+    console.log("Register https://YOUR-APP-URL/auth/callback in Oura if using cloud hosting");
+  }
 });

@@ -296,7 +296,7 @@ const STAT_DEFS = [
   { label: "Resting HR", getItems: (payload) => getRestingHrSeries(payload), key: "average_heart_rate", dayKey: "day", suffix: " bpm" },
   { label: "Latest HR", source: "__timeseries.heartrate", key: "bpm", dayKey: "timestamp", suffix: " bpm", alertKey: "heartrate", alwaysLatest: true },
   { label: "Avg HRV", source: "sleep", key: "average_hrv", dayKey: "day" },
-  { label: "Battery", source: "__timeseries.ring_battery_level", key: "level", dayKey: "timestamp", suffix: "%", alwaysLatest: true },
+  { label: "Battery", source: "__timeseries.ring_battery_level", key: "level", dayKey: "timestamp", suffix: "%", alwaysLatest: true, alertKey: "battery" },
 ];
 
 function showBanner(message, isError = true) {
@@ -637,14 +637,25 @@ function renderStats(payload) {
     const value = latest ? getPath(latest, stat.key) : null;
     const alertInfo = stat.alertKey ? alerts[stat.alertKey] : null;
     let meta = statMeta(latest, stat.dayKey, payload);
-    if (alertInfo?.alert && alertInfo.average_7d != null && alertInfo.threshold != null) {
+    const criticalLow = Boolean(alertInfo?.critical_low);
+    if (criticalLow && alertInfo?.critical_threshold != null) {
+      meta = `${meta} · below ${alertInfo.critical_threshold} bpm`;
+    } else if (alertInfo?.alert && stat.alertKey === "battery" && alertInfo.threshold != null) {
+      meta = `${meta} · at or below ${alertInfo.threshold}%`;
+    } else if (alertInfo?.alert && alertInfo.average_7d != null && alertInfo.threshold != null) {
       meta = `${meta} · below 7-day avg (${alertInfo.average_7d}, alert < ${alertInfo.threshold})`;
+    }
+    let alertClass = "";
+    if (criticalLow) {
+      alertClass = " alert-red";
+    } else if (alertInfo?.alert) {
+      alertClass = " alert-yellow";
     }
     return {
       label: stat.label,
       value: value != null ? `${value}${stat.suffix ?? ""}` : "—",
       meta,
-      alert: Boolean(alertInfo?.alert),
+      alertClass,
     };
   });
 
@@ -665,7 +676,7 @@ function renderStats(payload) {
   els.statsGrid.innerHTML = cards
     .map(
       (card) => `
-        <article class="stat-card${card.alert ? " alert-yellow" : ""}">
+        <article class="stat-card${card.alertClass ?? ""}">
           <div class="stat-label">${card.label}</div>
           <div class="stat-value">${card.value}</div>
           <div class="stat-meta">${card.meta}</div>

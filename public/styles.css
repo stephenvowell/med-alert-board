@@ -177,6 +177,19 @@ select {
   color: #ffd980;
 }
 
+.stat-card.alert-red {
+  background: rgba(255, 60, 60, 0.14);
+  border-color: rgba(255, 80, 80, 0.55);
+}
+
+.stat-card.alert-red .stat-value {
+  color: #ff6b6b;
+}
+
+.stat-card.alert-red .stat-meta {
+  color: #ff9999;
+}
+
 .stat-label {
   color: var(--muted);
   font-size: 0.85rem;
